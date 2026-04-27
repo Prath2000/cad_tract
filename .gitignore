@@ -1,0 +1,11 @@
+# Real project configs contain client-specific data — never commit these
+tora_config_*.yaml
+!tora_config_sample.yaml
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# GeoJSON output files
+*.geojson

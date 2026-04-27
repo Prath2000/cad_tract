@@ -1,0 +1,237 @@
+# ============================================================
+# TORA — DWG → GeoJSON Executor  |  Sample Configuration
+# ============================================================
+# Copy this file and rename it (e.g. config.yaml).
+# Fill in your project-specific values where placeholders appear.
+# Never commit your real config to version control — add it to .gitignore.
+# ============================================================
+
+global:
+  project_name:   "YOUR_PROJECT_NAME"
+  company:        "YOUR_COMPANY_NAME"
+  plant_name:     "YOUR_PLANT_OR_SITE_NAME"
+
+  crs: "EPSG:32643"                  # UTM zone for your project area
+
+  output_dir: "./output"
+
+  # DWG source files — one entry per layout/drawing file.
+  # Key is a short alias used in layer configs below.
+  source_dwgs:
+    layout_a:   "C:/path/to/your/dwg/Layout_A.dwg"
+    layout_b:   "C:/path/to/your/dwg/Layout_B.dwg"
+    routing:    "C:/path/to/your/dwg/Routing.dwg"
+
+  # Block_No is derived from the spatial reference layer (role: spatial_reference).
+  # primary_source:  the DWG layer that carries block-numbering text (MMS blocks).
+  # secondary_source: the spatial reference layer used for zone lookup.
+  block_no:
+    primary_source:
+      from_layer: "Reference Blocks"
+      from_field: "Block_No"
+    secondary_source:
+      from_layer: "Reference Blocks"
+      from_field: "Block_No"
+
+  # Fields that apply to every feature across all layers.
+  common_fields:
+    Plant_Name:   "YOUR_PLANT_OR_SITE_NAME"
+    Country:      "YOUR_COUNTRY"
+    State:        "YOUR_STATE"
+    District:     "YOUR_DISTRICT"
+    Taluka:       "YOUR_TALUKA"
+    Village:      "YOUR_VILLAGE"
+    Jurisdiction: "YOUR_JURISDICTION"
+    Owned_By:     "YOUR_ORGANIZATION"
+    Prepared_By:  "YOUR_NAME_OR_TEAM"
+
+
+# ============================================================
+# LAYERS
+# ============================================================
+# Each layer maps to one AutoCAD layer in a DWG file.
+# locked: true  → skip this layer during extraction
+# locked: false → extract this layer
+
+layers:
+
+  # ----------------------------------------------------------
+  # SPATIAL REFERENCE LAYER
+  # role: spatial_reference tells the executor to load this
+  # layer first and use its polygons for zone lookup (Block_No).
+  # ----------------------------------------------------------
+  - name:    "Reference Blocks"
+    role:    spatial_reference
+    locked:  false
+    output:  "reference_blocks.geojson"
+
+    match_mode: exact
+    source_dwg: layout_a
+    layer_name: "YOUR_CAD_LAYER_NAME_FOR_BLOCKS"
+
+    fields:
+      Block_No:
+        type: auto_sequence
+        prefix: "ZONE_BLK"
+        pad: 2
+      Plant_Name:  "YOUR_PLANT_OR_SITE_NAME"
+      Code:        "REF_BLK"
+      Country:     "YOUR_COUNTRY"
+      State:       "YOUR_STATE"
+
+  # ----------------------------------------------------------
+  # DERIVED ZONE BOUNDARY LAYER
+  # derive_from: spatial_reference dissolves the reference
+  # blocks into one merged polygon per declared zone.
+  # ----------------------------------------------------------
+  - name:    "Zone Boundaries"
+    derive_from: spatial_reference
+    locked:  false
+    output:  "zone_boundaries.geojson"
+
+    # Declare the zones to dissolve.
+    # sub_plot matches the Block_No prefix (e.g. ZONE_BLK01 → ZONE).
+    merge_sources:
+      - sub_plot: "ZONE_A"
+      - sub_plot: "ZONE_B"
+
+    fields:
+      Plant_Name:  "YOUR_PLANT_OR_SITE_NAME"
+      Code:        "ZONE_BND"
+      Country:     "YOUR_COUNTRY"
+      State:       "YOUR_STATE"
+
+  # ----------------------------------------------------------
+  # STANDARD POINT LAYER  (equipment, structures, etc.)
+  # ----------------------------------------------------------
+  - name:    "Equipment Layer A"
+    locked:  false
+    output:  "equipment_a.geojson"
+
+    match_mode: exact
+    source_dwg: layout_a
+    layer_name: "YOUR_CAD_LAYER_NAME_FOR_EQUIPMENT"
+    code:        "EQUIP_A"
+
+    geometry_params:
+      only_insert: true        # only process INSERT (block) entities
+
+    fields:
+      Plant_Name:       "YOUR_PLANT_OR_SITE_NAME"
+      Code:             "EQUIP_A"
+      Category:         "YOUR_CATEGORY"
+      Classification:   "YOUR_CLASSIFICATION"
+      Sub_Classification: "YOUR_SUB_CLASSIFICATION"
+      Plot_No:
+        from_dwg_name: true
+      Block_No:
+        spatial_join: secondary
+      Connection_ID:
+        type: auto_sequence
+        prefix: "CONN_"
+        pad: 3
+      Make:             " "
+      Model:            " "
+      Capacity:         " "
+      Country:          "YOUR_COUNTRY"
+      State:            "YOUR_STATE"
+
+  # ----------------------------------------------------------
+  # STANDARD POLYLINE / LINE LAYER  (routes, cables, paths, etc.)
+  # ----------------------------------------------------------
+  - name:    "Route Layer A"
+    locked:  false
+    output:  "route_a.geojson"
+
+    match_mode: prefix         # matches multiple DWG layers by prefix
+    source_dwg: routing
+    layer_name: "YOUR_CAD_LAYER_PREFIX"
+    code:        "ROUTE_A"
+
+    # merge_sources: combine sub-type variants into one layer.
+    # sub_type is detected from the matched DWG layer name suffix
+    # and exposed via { from_merge_source: layer_subtype }.
+    merge_sources:
+      - layer_name: "YOUR_LAYER_TYPE_1"
+        code:       "ROUTE_A1"
+        sub_type:   "TYPE1"
+      - layer_name: "YOUR_LAYER_TYPE_2"
+        code:       "ROUTE_A2"
+        sub_type:   "TYPE2"
+
+    fields:
+      Plant_Name:     "YOUR_PLANT_OR_SITE_NAME"
+      Code:
+        from_merge_source: code
+      Sub_Type:
+        from_merge_source: layer_subtype
+      Plot_No:
+        from_dwg_name: true
+      Block_No:
+        spatial_join: secondary
+      Length_m:
+        calculated: length_m
+      Start_Connection:
+        spatial_join:
+          method: nearest
+          from_layer: "Equipment Layer A"
+          from_field: "Connection_ID"
+      End_Connection:   " "
+      Country:          "YOUR_COUNTRY"
+      State:            "YOUR_STATE"
+
+  # ----------------------------------------------------------
+  # STANDARD POLYGON LAYER  (areas, boundaries, footprints, etc.)
+  # ----------------------------------------------------------
+  - name:    "Area Layer A"
+    locked:  false
+    output:  "area_a.geojson"
+
+    match_mode: exact
+    source_dwg: layout_a
+    layer_name: "YOUR_CAD_LAYER_NAME_FOR_AREAS"
+    code:        "AREA_A"
+
+    geometry_params:
+      min_area_sqm: 10.0       # ignore polygons smaller than this
+
+    fields:
+      Plant_Name:       "YOUR_PLANT_OR_SITE_NAME"
+      Code:             "AREA_A"
+      Category:         "YOUR_CATEGORY"
+      Classification:   "YOUR_CLASSIFICATION"
+      Plot_No:
+        from_dwg_name: true
+      Block_No:
+        spatial_join: secondary
+      Area_Ha:
+        calculated: area_ha
+      Perimeter_Km:
+        calculated: perimeter_km
+      Country:          "YOUR_COUNTRY"
+      State:            "YOUR_STATE"
+
+  # ----------------------------------------------------------
+  # DERIVED CHILD LAYER (derive_from: parent_layer)
+  # Distributes N child points along each parent feature's
+  # long axis — one point per filled attribute tag.
+  # The parent layer must appear earlier in this list.
+  # ----------------------------------------------------------
+  - name:    "Child Point Layer"
+    derive_from: parent_layer
+    parent_layer_name: "Equipment Layer A"   # must match the name: above
+    locked:  false
+    output:  "child_points.geojson"
+
+    code:             "CHILD_PT"
+    category:         "YOUR_CATEGORY"
+    classification:   "YOUR_CLASSIFICATION"
+    sub_classification: "YOUR_SUB_CLASSIFICATION"
+
+    # The parent block's attribute tags to distribute as child points.
+    # Each non-blank tag becomes one child feature.
+    id_fields:
+      - [ID_01, TAG1]
+      - [ID_02, TAG2]
+      - [ID_03, TAG3]
+      - [ID_04, TAG4]
