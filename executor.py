@@ -33,8 +33,8 @@ except ImportError:
     HAS_SHAPELY = False
 
 # Pre-compiled regexes used in the hot path (feature-level loops)
-_RE_HAS_SUBSUFFIX = re.compile(r'[a-z]$')          # 'A9a' yes, 'A9' no
-_RE_PLOT_PREFIX   = re.compile(r'^([A-Za-z]\d+[a-z]?)')  # 'A9a_BLK01' → 'A9a'
+_RE_HAS_SUBSUFFIX = re.compile(r'[a-z]$')          # zone ID has sub-suffix when it ends in a lowercase letter
+_RE_PLOT_PREFIX   = re.compile(r'^([A-Za-z]\d+[a-z]?)')  # extract zone prefix from block ID
 
 
 # ============================================================
@@ -210,16 +210,16 @@ def detect_plot_from_path(path):
     """Extract plot ID from DWG filename eg 'P01' from 'Layout (Plot P01)'"""
     fname    = os.path.basename(path)
     patterns = [
-        r'[Pp]lot\s+([A-Za-z]\d+[a-z]?)',      # "Plot A9a"
-        r'[Rr]outing\s+([A-Za-z]\d+[a-z]?)',    # "Routing A9a"
-        r'[Bb]oundary([A-Za-z]\d+[a-z]?)',        # "BlockBoundaryA9a"
-        r'[Bb]lock[A-Za-z]*([A-Za-z]\d+[a-z]?)', # "BlockA9a"
-        r'\(([A-Za-z]\d+[a-z]?)[-)]',            # "(A9a-" or "(A9a)"
-        r'\b([A-Za-z]\d+[a-z]?)-[A-Za-z0-9]',   # "A9a-BL01"
-        r'[-_]([A-Za-z]\d+[a-z]?)[-_\.]',        # "-A9a-"
-        r'([A-Za-z]\d+[a-z]?)\.dwg',             # "A9a.dwg"
-        r'\b([A-Za-z]\d+[a-z]?)\b',              # standalone "A9a"
-        r'^([A-Za-z]\d+[a-z]?)\s',                # "A9 " at start of filename
+        r'[Pp]lot\s+([A-Za-z]\d+[a-z]?)',       # keyword "Plot" followed by zone ID
+        r'[Rr]outing\s+([A-Za-z]\d+[a-z]?)',   # keyword "Routing" followed by zone ID
+        r'[Bb]oundary([A-Za-z]\d+[a-z]?)',       # keyword "Boundary" directly followed by zone ID
+        r'[Bb]lock[A-Za-z]*([A-Za-z]\d+[a-z]?)', # keyword "Block..." followed by zone ID
+        r'\(([A-Za-z]\d+[a-z]?)[-)]',            # zone ID in parentheses
+        r'\b([A-Za-z]\d+[a-z]?)-[A-Za-z0-9]',   # zone ID followed by hyphen + alphanumeric
+        r'[-_]([A-Za-z]\d+[a-z]?)[-_\.]',        # zone ID between separators
+        r'([A-Za-z]\d+[a-z]?)\.dwg',             # zone ID immediately before .dwg
+        r'\b([A-Za-z]\d+[a-z]?)\b',              # standalone zone ID token
+        r'^([A-Za-z]\d+[a-z]?)\s',               # zone ID at start of filename
     ]
     for p in patterns:
         m = re.search(p, fname)
@@ -253,13 +253,11 @@ class PlotRegistry:
 
 # ============================================================
 # BLOCK_NO FROM LAYER NAME
-# "Equipment Block-07"  → "ZONE_BLK07"
-# "Equipment Block-12"  → "ZONE_BLK12"
-# "Equipment-03"        → "ZONE_BLK03"
+# Parses trailing digits from the layer name and formats them as ZONE_BLKnn
 # ============================================================
 
 def block_no_from_layer(layer_name, plot_id):
-    """Extract block number from layer name suffix and format as A5_BLK07."""
+    """Extract block number from layer name trailing digits and format as ZONE_BLKnn."""
     if not layer_name:
         return None
     nums = re.findall(r'\d+', layer_name)
@@ -274,12 +272,7 @@ def block_no_from_layer(layer_name, plot_id):
 # ============================================================
 
 def format_block_no(raw_val, plot_id):
-    """Reformat DWG MTEXT block label. Suffix always lowercase.
-    'A9a- BL-40' -> 'A9a_BLK40'
-    'A9B- BL-07' -> 'A9b_BLK07'
-    'A9A- BL-01' -> 'A9a_BLK01'
-    'A9- BL-05'  -> 'A9_BLK05'
-    """
+    """Reformat DWG MTEXT block label into ZONE_BLKnn format. Zone suffix always lowercase."""
     if not raw_val:
         return raw_val
     raw_clean  = raw_val.strip()
@@ -304,16 +297,16 @@ def detect_plot_from_path(path):
     """Extract plot ID from DWG filename eg 'P01' from 'Layout (Plot P01)'"""
     fname    = os.path.basename(path)
     patterns = [
-        r'[Pp]lot\s+([A-Za-z]\d+[a-z]?)',      # "Plot A9a"
-        r'[Rr]outing\s+([A-Za-z]\d+[a-z]?)',    # "Routing A9a"
-        r'[Bb]oundary([A-Za-z]\d+[a-z]?)',        # "BlockBoundaryA9a"
-        r'[Bb]lock[A-Za-z]*([A-Za-z]\d+[a-z]?)', # "BlockA9a"
-        r'\(([A-Za-z]\d+[a-z]?)[-)]',            # "(A9a-" or "(A9a)"
-        r'\b([A-Za-z]\d+[a-z]?)-[A-Za-z0-9]',   # "A9a-BL01"
-        r'[-_]([A-Za-z]\d+[a-z]?)[-_\.]',        # "-A9a-"
-        r'([A-Za-z]\d+[a-z]?)\.dwg',             # "A9a.dwg"
-        r'\b([A-Za-z]\d+[a-z]?)\b',              # standalone "A9a"
-        r'^([A-Za-z]\d+[a-z]?)\s',                # "A9 " at start of filename
+        r'[Pp]lot\s+([A-Za-z]\d+[a-z]?)',       # keyword "Plot" followed by zone ID
+        r'[Rr]outing\s+([A-Za-z]\d+[a-z]?)',   # keyword "Routing" followed by zone ID
+        r'[Bb]oundary([A-Za-z]\d+[a-z]?)',       # keyword "Boundary" directly followed by zone ID
+        r'[Bb]lock[A-Za-z]*([A-Za-z]\d+[a-z]?)', # keyword "Block..." followed by zone ID
+        r'\(([A-Za-z]\d+[a-z]?)[-)]',            # zone ID in parentheses
+        r'\b([A-Za-z]\d+[a-z]?)-[A-Za-z0-9]',   # zone ID followed by hyphen + alphanumeric
+        r'[-_]([A-Za-z]\d+[a-z]?)[-_\.]',        # zone ID between separators
+        r'([A-Za-z]\d+[a-z]?)\.dwg',             # zone ID immediately before .dwg
+        r'\b([A-Za-z]\d+[a-z]?)\b',              # standalone zone ID token
+        r'^([A-Za-z]\d+[a-z]?)\s',               # zone ID at start of filename
     ]
     for p in patterns:
         m = re.search(p, fname)
@@ -1160,7 +1153,7 @@ class SpatialJoinEngine:
         # ── Pre-bucket by plot prefix ────────────────────────────────────────
         # Converts the per-call list-comprehension filter in nearest_in_plot()
         # into a single O(1) dict lookup.  Built for any layer whose features
-        # carry a "Block_No"-style field (e.g. 'A9a_BLK01').
+        # carry a "Block_No"-style field (e.g. 'P01_BLK03').
         buckets = {}
         for f in features:
             props = f.get("properties", {})
@@ -1395,14 +1388,14 @@ class SpatialJoinEngine:
                 feat_props = features[ci].get("properties", {})
                 raw_str    = str(raw_val)
                 # Strip leading alpha prefix for simple "PREFIX-digits" values.
-                # Preserves compound values like "ZONE_BLK01" intact.
+                # Preserves compound values like "P01_BLK03" intact.
                 m_strip = re.match(r'^[A-Za-z]+[-_]+0*(\d+)$', raw_str)
                 digits  = m_strip.group(1) if m_strip else raw_str
                 try:
                     subs = {k: (v or "") for k, v in feat_props.items()}
                     subs[field] = digits
                     result = transform_fmt.format_map(subs)
-                    result = re.sub(r'([A-Za-z]\d+[a-z]?)_BLK', r'\1-BLK', result)
+                    result = re.sub(r'([A-Za-z0-9]+)_BLK', r'\1-BLK', result)
                     assignment[ci] = result
                 except (KeyError, ValueError):
                     assignment[ci] = raw_val
@@ -1584,7 +1577,7 @@ class FieldEngine:
             return None
 
         elif t == "block_no_to_connection":
-            # A9_BLK01 -> A9-BL01
+            # ZONE_BLKnn -> ZONE-BLnn
             val = props.get(cfg.get("from_field", "Block_No"), "")
             if val:
                 m = re.match(r'([A-Za-z0-9]+)_BLK([0-9]+)', str(val))
@@ -1593,7 +1586,7 @@ class FieldEngine:
             return None
 
         elif t == "block_no_to_prefixed_connection":
-            # e.g. ZONE_BLK01 → PREFIX-ZONE-BLK01
+            # e.g. ZONE_BLK03 → PREFIX-ZONE-BLK03
             val    = props.get(cfg.get("from_field", "Block_No"), "")
             prefix = cfg.get("prefix", "")
             if val:
@@ -1603,7 +1596,7 @@ class FieldEngine:
             return None
 
         elif t == "extract_last_sequence":
-            # e.g. PREFIX_ZONE_CODE_01 → PREFIX-01
+            # e.g. PROJ_ZONE_CODE_01 → PREFIX-01
             val    = props.get(cfg.get("from_field", "Connection_ID"), "")
             prefix = cfg.get("prefix", "")
             pad    = int(cfg.get("pad", 2))
@@ -1665,9 +1658,9 @@ class FieldEngine:
 
                 if fc.get("from_dwg_name"):
                     _plot = self.get_plot()
-                    # If the DWG filename already encodes a sub-plot suffix
-                    # (lowercase letter at end, e.g. 'A9a', 'A9b'), trust it.
-                    # If not, resolve the correct sub-plot by
+                    # If the DWG filename already encodes a zone sub-suffix
+                    # (lowercase letter at the end of the zone ID), trust it.
+                    # If not, resolve the correct zone by
                     # finding the spatial reference polygon that contains this
                     # feature's centroid.
                     if _plot and not _RE_HAS_SUBSUFFIX.search(_plot):
@@ -1773,20 +1766,20 @@ class FieldEngine:
                                         f"but field '{_fld}' returned empty"
                                     )
                         # Optional transform — format string with join result + feature props
-                        # eg format: "{Plot_No}-BL{Ref_No}"
+                        # eg format: "{Plot_No}-{Block_No}"
                         _tfm = jt.get("transform", {})
                         _fmt = _tfm.get("format", "") if isinstance(_tfm, dict) else ""
                         if _fmt and _raw is not None and _raw != " ":
                             _subs = {k: (v or "") for k, v in props.items()}
                             _raw_str = str(_raw)
                             # Only strip simple "PREFIX-digits" values (e.g. "REF-01" → "01")
-                            # Preserve compound values like "ZONE_BLK01" intact
+                            # Preserve compound values like "P01_BLK03" intact
                             _m_strip = re.match(r'^[A-Za-z]+[-_]+0*(\d+)$', _raw_str)
                             _subs[_fld] = _m_strip.group(1) if _m_strip else _raw_str
                             try:
                                 result = _fmt.format_map(_subs)
-                                # Normalise A9a_BLK01 → A9a-BLK01 inside formatted value
-                                result = re.sub(r'([A-Za-z]\d+[a-z]?)_BLK', r'\1-BLK', result)
+                                # Normalise ZONE_BLKnn → ZONE-BLKnn separators inside formatted value
+                                result = re.sub(r'([A-Za-z0-9]+)_BLK', r'\1-BLK', result)
                                 props[fn] = result
                             except (KeyError, ValueError) as _fmte:
                                 Logger.warn(f"spatial_join transform failed for {fn}: fmt='{_fmt}' err={_fmte}")
@@ -2317,9 +2310,8 @@ def _dissolve_to_clean_polygon(polys, close_gap=200.0):
       6. Take largest polygon if still MultiPolygon
       7. Rebuild from exterior ring only — zero holes guaranteed
 
-    close_gap=200m fills inter-block road gaps (~10-30m), the A9a/A9b
-    shared-boundary notch, and any outer concavities, while staying well
-    within a single block footprint (~250m × 500m).
+    close_gap=200m fills inter-block road gaps and shared-boundary notches
+    while staying well within a single block footprint.
     """
     if not polys:
         return None
@@ -2353,7 +2345,7 @@ def derive_zone_boundary_from_reference(bb_feats, pb_cfg, output_dir, crs="EPSG:
     Auto-derive a zone boundary layer — one dissolved feature per zone declared in merge_sources.
 
     Output: 1 layer, N features — each zone has its OWN dissolved geometry.
-    Zone membership is determined from Block_No prefix (ZONE_BLK01 → ZONE) — reliable
+    Zone membership is determined from Block_No prefix (P01_BLK03 → P01) — reliable
     regardless of whether the zone ID was stamped on the reference features.
     """
     if not HAS_SHAPELY:
@@ -3189,18 +3181,12 @@ def main():
 
             _code   = layer_cfg.get("code", "")
             _seq    = 0
-            _id_map = [("ID_01","ID1"), ("ID_02","ID2"),
-                       ("ID_03","ID3"), ("ID_04","ID4")]
+            _id_map = [tuple(pair) for pair in layer_cfg.get("id_fields", [])]
 
             for _st in _st_live:
                 _pts_poly = _st.get("_pts", [])
                 _ct       = _st.get("_centroid", (0.0, 0.0))
                 _sprops   = _st.get("properties", {})
-                _plot_no  = _sprops.get("Plot_No", "")
-                _pnum     = int(re.findall(r'\d+', str(_plot_no))[0]) \
-                            if re.findall(r'\d+', str(_plot_no)) else 0
-                _clean_code = _code
-
                 # ── Centreline spacing ───────────────────────────────────────
                 # Find parent feature long axis from its bounding box.
                 # Parent features are typically elongated rectangles in UTM.
@@ -3242,62 +3228,15 @@ def main():
                     if not _sid or _sid.strip() in ("", " "):
                         continue
                     _seq += 1
-                    # Use the full sub-plot ID (e.g. 'A9a', 'A9b') so
-                    # Connection_ID is consistent with Plot_No — same logic
-                    # as FieldEngine.resolve().  Fall back to A{pnum:02d}
-                    # if Plot_No is somehow absent or blank.
-                    _conn_plot = (
-                        _plot_no if (_plot_no and _plot_no.strip() not in ("", " "))
-                        else f"A{_pnum:02d}"
-                    )
-                    _conn_id = f"{_conn_plot}_{_clean_code}_{_seq:02d}"
 
                     # Point at this child's position along the parent feature centreline
                     _tp = _string_pts[_idx]
 
-                    _props = {
-                        "OBJECTID":              _seq,
-                        "Connection_ID":         _conn_id,
-                        "Plant_Name":            _sprops.get("Plant_Name", ""),
-                        "Code":                  layer_cfg.get("code", ""),
-                        "Category":              layer_cfg.get("category", ""),
-                        "Classification":        layer_cfg.get("classification", ""),
-                        "Sub_Classification":    layer_cfg.get("sub_classification", ""),
-                        "Plot_No":               _plot_no,
-                        "Block_No":              _sprops.get("Block_No", " "),
-                        "Modules_per_String":    28,
-                        "String_Code":           _sid,
-                        "String_Capacity":       0,
-                        "Make":                  " ",
-                        "Length_mm":             " ",
-                        "Width_mm":              " ",
-                        "Depth_mm":              " ",
-                        "Module_Type":           " ",
-                        "Type_Cell":             " ",
-                        "Module_Details":        " ",
-                        "Pmax_STC":              " ",
-                        "Max_Voltage":           " ",
-                        "Max_Current":           " ",
-                        "Open_Circuit_Voltage":  " ",
-                        "Short_Circuit_Current_A": " ",
-                        "Efficiency_STC":        " ",
-                        "Level_Grade":           " ",
-                        "Development_Status":    " ",
-                        "Development_Year":      " ",
-                        "Operational_Status":    " ",
-                        "Operational_Year":      " ",
-                        "Owned_By":              " ",
-                        "Developed_By":          " ",
-                        "Maintained_By":         " ",
-                        "Prepared_By":           " ",
-                        "Country":               _sprops.get("Country", ""),
-                        "State":                 _sprops.get("State", ""),
-                        "District":              _sprops.get("District", ""),
-                        "Taluka":                _sprops.get("Taluka", ""),
-                        "Village":               _sprops.get("Village", ""),
-                        "Jurisdiction":          _sprops.get("Jurisdiction", ""),
-                        "Attachment":            " ",
-                    }
+                    # Expose child tag value so the layer's fields: section can
+                    # reference it via  from_attr: Child_ID.
+                    # All field names, order, and values come from the YAML config.
+                    _raw = {**_sprops, "Child_ID": _sid}
+                    _props = fe.resolve(layer_cfg, _raw, [_tp], "point", _seq, spatial)
                     features.append({
                         "type":      "Feature",
                         "geometry":  {"type": "Point",

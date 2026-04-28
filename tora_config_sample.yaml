@@ -11,7 +11,7 @@ global:
   company:        "YOUR_COMPANY_NAME"
   plant_name:     "YOUR_PLANT_OR_SITE_NAME"
 
-  crs: "EPSG:32643"                  # UTM zone for your project area
+  crs: ""YOUR PREFERRED PROJECTION"                  # UTM zone for your project area
 
   output_dir: "./output"
 
